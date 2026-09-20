@@ -1,0 +1,54 @@
+name: CI Assessment Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Validate Docker Compose Configuration
+        run: docker compose config
+
+      - name: Prepare Environment File
+        run: |
+          if [ -f config/app.env.example ]; then
+            cp config/app.env.example config/app.env
+          elif [ ! -f config/app.env ]; then
+            echo "DATABASE_URL=postgresql://barq_app:BarqLabOnly_7qN2vK8c@postgres:5432/barq_tasks" > config/app.env
+            echo "REDIS_URL=redis://redis:6379/0" >> config/app.env
+          fi
+
+      - name: Build and Start Containers
+        run: docker compose up -d --build
+
+      - name: Run Validation Suite
+        run: python3 validate.py
+
+      - name: Run Failure and Recovery Tests
+        run: python3 failure_test.py
+
+      # Extra Credit: Security Scan using Trivy
+      - name: Run Trivy Vulnerability Scanner on App Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'barq-assessment-app-01'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Stop and Cleanup Containers
+        if: always()
+        run: docker compose down -v
