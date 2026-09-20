@@ -1,5 +1,5 @@
 
-```markdown
+
 # Barq Academy - DevOps Assessment (Part 1 to 4 Complete)
 
 ## 1. Quick Start & Operational Runbook
@@ -117,8 +117,4 @@ docker compose down -v
 * **GitHub Actions Status:** Passed (Green)
 * **Trivy Vulnerability Scan:** Completed
 * **Disaster Recovery Test:** Verified via `backup.sh` & `restore.sh`
-
-```
-
----
 
