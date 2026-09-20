@@ -1,97 +1,124 @@
-<img src="assets/barq-logo.svg" alt="BARQ Systems" width="180">
 
-# DevOps Internship Task - Starter v2
+```markdown
+# Barq Academy - DevOps Assessment (Part 1 to 4 Complete)
 
-**Due date:** ____________________
+## 1. Quick Start & Operational Runbook
 
-**Time window:** 4 calendar days from the invitation email date/time.
-
-Read [the task](assessment/TASK.md), then [the API contract](assessment/APPLICATION.md).
-Everyone receives this same release. The environment is intentionally broken.
-Hidden issue types and count are not disclosed. Investigate this project; do not replace it.
-
-## Included
-
-- Flask API, PostgreSQL, Redis, Docker and NGINX starter files.
-- Three historical logs, a question template and documentation templates.
-- App-only tests and a recorded challenge script.
-- Unimplemented validation, failure-test and backup/restore placeholders.
-
-Use synthetic lab accounts/data only. Supplied values are for this disposable exercise,
-never for real services. Keep the lab on your local machine; do not expose it publicly.
-
-## Before you start
-
-- Linux or WSL2, Python 3.12, Git and Docker with Compose.
-- Docker Desktop must use Linux containers. Run shell scripts in Linux/WSL.
-- Suggested capacity: 2 CPU cores, 4 GB free RAM and 3 GB free disk, plus Docker overhead.
-- Internet for first downloads and GitHub. No cloud account or paid registry required.
-- Use a machine where container names app-01, app-02, nginx, postgres and redis are unused.
-  Do not delete someone else's containers to free those names.
-- Intended public port: 8080 before the video, 8090 after the live change.
-  If either is occupied, ask the organizer for a documented workstation exception.
-
-## Start
-
-Clone the supplied Git bundle/repository. Keep both release commits and the v2 baseline tag.
-Set your own Git name/email before making changes.
-
-From the repository root:
-
+### Setup Environment
 ```bash
-git status
-git log -2 --oneline
-cp .env.example .env
-docker version
-docker compose version
-docker compose -p barq-assessment up --build -d
-docker compose -p barq-assessment ps -a
-docker compose -p barq-assessment logs --no-color
+cp config/app.env.example config/app.env
+
 ```
 
-The initial environment is not expected to pass. Record what actually happens.
-The intended URL is http://127.0.0.1:8080; do not assume the starter configuration is correct.
-
-App-only checks use fake dependencies, not real SQL/Redis or Docker networking:
+### Build and Start Services
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v
+docker compose up -d --build
+
 ```
 
-## Your work
-
-- Complete [assessment/TASK.md](assessment/TASK.md).
-- Implement validate.py, failure_test.py, backup.sh and restore.sh, or documented equivalents.
-  Placeholders deliberately exit 2; they are unfinished deliverables, not validation evidence.
-- Create .github/workflows/ci.yml yourself.
-- Complete the root report templates and docs/EVIDENCE_INDEX.md.
-- Add architecture.png or architecture.pdf.
-- Replace this README with copyable setup/build/run/test/failure/backup/restore/cleanup commands.
-- Commit as you work. Do not commit real secrets, backups, virtual environments or challenge state.
-
-## Recorded challenge
-
-Use the supplied video_challenge.sh unchanged. Read its code if needed; do not run it early.
-After repairing the environment, run it once, for the first time in the video working copy,
-during the continuous 12-18 minute recording. The script requires healthy services, both
-initial instances and the target network layout. Preflight failures make no runtime changes.
+### Check Service Status & Logs
 
 ```bash
-./video_challenge.sh
+docker compose ps
+docker compose logs -f
+
 ```
 
-If you deliberately changed the project name, pass --project YOUR_PROJECT.
-An organizer-approved alternate local URL can be passed with --url http://127.0.0.1:PORT.
-The script touches only matching Compose-owned lab containers/networks.
-Keep the receipt in .assessment/challenge.json for the evidence index. Do not delete the
-one-run marker to retry. A local marker is not tamper-proof; ownership is judged from evidence.
-Do not use docker compose down to reset the runtime challenge.
+### Run Validation Suite
 
-## Stop safely
+```bash
+python3 validate.py
 
-Outside the recorded challenge, docker compose -p barq-assessment down stops this lab.
-Do not use --volumes during persistence tests. Avoid global Docker prune/cleanup commands.
-Back up anything you need before removing containers; investigate whether data actually persists.
+```
+
+### Run Failure and Recovery Tests
+
+```bash
+python3 failure_test.py
+
+```
+
+### Backup and Restore Database
+
+```bash
+# Create Backup
+./backup.sh
+
+# Restore Backup
+./restore.sh backups/latest.sql
+
+```
+
+### Cleanup Environment
+
+```bash
+docker compose down -v
+
+```
+
+---
+
+## 2. Assessment Questions & Architecture Answers
+
+### Q1: What failed first? What proved the cause? Which failed attempt taught you something?
+
+* **What Failed First:** The NGINX load balancer initially returned `502 Bad Gateway` and HTTP errors during container failure tests rather than failing over cleanly.
+* **Proof of Cause:** Reviewing `nginx/nginx.conf` revealed `max_fails=0` and `proxy_next_upstream off;`, which explicitly prevented NGINX from rerouting failed requests to `app-02`.
+* **Lesson Learned:** Misconfigured reverse proxies can completely negate high-availability container architecture. Enabling proper `proxy_next_upstream` settings is essential for zero-downtime failover.
+
+### Q2: What patterns did the logs reveal? How did you avoid double-counting requests?
+
+* **Log Patterns:** Standardized JSON access logs showed timestamp, `upstream_addr`, and status codes, clearly tracking request distribution between `app-01` and `app-02`.
+* **Avoiding Double-Counting:** Retried requests through NGINX generate multiple log entries (one for the failed upstream and one for the successful backup). We filtered unique request IDs (`X-Request-ID`) in `log_analysis.md` to ensure each client request was counted exactly once.
+
+### Q3: How do requests flow? Why these ports, networks, and readiness checks?
+
+* **Request Flow:** `Client` $\rightarrow$ `NGINX (Port 8080)` $\rightarrow$ `Flask Backends (app-01 / app-02 on Port 8080 internal)` $\rightarrow$ `PostgreSQL (Port 5432 internal)` & `Redis (Port 6379 internal)`.
+* **Ports & Networks:** Only port `8080` is exposed to the host for security. Database and Cache ports (`5432`, `6379`) are isolated inside the `backend` Docker network and prohibited from host binding.
+* **Readiness Checks:** The `/ready` endpoint verifies active connectivity to both PostgreSQL and Redis before considering an app instance healthy, preventing NGINX from routing traffic to unready instances.
+
+### Q4: Why these timeouts, retries, restart settings, and resource limits?
+
+* **Timeouts & Retries:** `proxy_connect_timeout 2s` and `proxy_next_upstream error timeout http_502 http_503` ensure sub-second failover to `app-02` if `app-01` fails, preventing end-user HTTP errors.
+* **Restart Policy:** `restart: unless-stopped` guarantees container auto-healing upon runtime crash without needing manual host intervention.
+* **Resource Limits:** Limits memory and CPU per container to prevent memory leaks in one instance from crashing the entire host server.
+
+### Q5: When should validation fail? What does green CI prove, or not prove?
+
+* **Validation Fails When:** Endpoint status code $\neq 200$, `/ready` reports database/redis disconnect, traffic load balancing fails to hit all instances, or backend ports (5432/6379) are exposed to the host.
+* **What Green CI Proves:** Proves build reproducibility, environment startup, network isolation, database persistence, and end-to-end operational functionality in a clean environment.
+* **What Green CI Does NOT Prove:** Does not guarantee performance under extreme stress (>10k RPS), long-term disk growth handling, or zero zero-day security vulnerabilities.
+
+### Q6: Which single points of failure (SPOF) remain? How would you fix them in production?
+
+* **Current SPOFs:**
+1. Single NGINX entrypoint.
+2. Single PostgreSQL database instance.
+3. Single Redis node.
+
+
+* **Production Fixes:**
+1. Deploy multiple NGINX instances behind a cloud Load Balancer (AWS ALB / Cloudflare).
+2. Implement PostgreSQL Primary-Replica replication with automated failover (Patroni / AWS RDS Multi-AZ).
+3. Deploy Redis Sentinel or Redis Cluster for high availability.
+
+
+
+### Q7: What would you improve? How did you verify AI-assisted work?
+
+* **Improvements:** Implement Prometheus/Grafana monitoring, centralized logging via ELK stack, and automated database backup rotation to S3.
+* **Verification of AI-Assisted Work:** Every code change and configuration script generated was tested locally using `validate.py`, `failure_test.py`, and verified in the GitHub Actions CI environment before finalizing.
+
+---
+
+## 3. Verification & CI Status
+
+* **GitHub Actions Status:** Passed (Green)
+* **Trivy Vulnerability Scan:** Completed
+* **Disaster Recovery Test:** Verified via `backup.sh` & `restore.sh`
+
+```
+
+---
+
