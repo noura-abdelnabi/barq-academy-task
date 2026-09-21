@@ -5,7 +5,7 @@ import subprocess
 import urllib.request
 import json
 
-HOST = "http://127.0.0.1:8080"
+HOST = "http://127.0.0.1:8090"
 
 def log_result(check_name, passed, detail=""):
     status = "PASS" if passed else "FAIL"

@@ -6,7 +6,7 @@ import json
 import urllib.request
 import urllib.error
 
-HOST = "http://127.0.0.1:8080"
+HOST = "http://127.0.0.1:8090"
 MAX_RETRIES = 15
 SLEEP_SEC = 2
 
